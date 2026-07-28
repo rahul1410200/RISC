@@ -1,0 +1,583 @@
+`timescale 1ns/1ps
+
+
+module risc(
+input clk,
+input reset
+
+);
+
+reg [31:0]pc;
+wire [31:0]instruction;
+wire [31:0] if_id_pc;
+wire [31:0] if_id_int;
+
+wire [4:0]opcode;
+wire imm_f;
+wire [3:0]rd;
+wire [3:0]r1;
+wire [3:0]r2;
+wire [13:0]imm;
+
+wire imm_f_la;
+wire [3:0]rd_la;
+wire [3:0]r1_la;
+wire [3:0]r2_la;
+wire [13:0]imm_la;
+wire [4:0] opcode_la;
+
+wire regwrite;
+wire memwrite;
+wire memtoreg;
+wire alusrc;
+wire [3:0] aluop;
+
+wire [31:0] wd;
+wire [31:0]r1_val;
+wire [31:0]r2_val;
+
+wire [31:0]op1;
+wire [31:0]op2;
+
+wire [31:0]alu_result;
+
+wire [31:0]alu_result_out;
+wire [31:0]r2_value_out;
+wire [3:0]rd_out;
+wire memwrite_out;
+wire memtoreg_out;
+wire regwrite_out;
+
+wire [31:0]aluresult;
+wire [31:0] mem_read_data;
+wire [3:0]rdout;
+wire memtoregout;
+wire regwriteout;
+
+wire [31:0] alu_out;
+wire [31:0]mem_rd_data_out;
+wire [3:0] read_out;
+wire mem_to_reg_out;
+wire reg_write_out;
+
+wire [3:0]rd_back;
+
+wire [31:0] imm_ext = {{18{imm_la[13]}}, imm_la};
+
+instruction_mem int_mem(pc,instruction);
+////////////////////////////////////////////////
+if_id ifid(clk,reset,pc,instruction,if_id_pc,if_id_int);
+//////////////////////////////////////////////////////////////
+decode dd(if_id_int,opcode,imm_f,rd,r1,r2,imm);
+//////////////////////////////////////////////////////////////////////////////////
+id_ex idex(clk , reset,imm_f,rd,r1,r2,imm,opcode,imm_f_la,rd_la,r1_la,r2_la,imm_la,opcode_la );
+//////////////////////////////////////////////////////////////////////////////////
+control_unit cu(opcode_la,imm_f_la,regwrite,memwrite,memtoreg,alusrc,aluop );
+/////////////////////////////////////////////////////////////////////////////
+register_file regfile(clk,reset,r1_la,r2_la,rd_back,wd,reg_write_out,r1_val,r2_val);
+/////////////////////////////////////////////////////////////////////////
+op o_p(r1_val,r2_val,alusrc,imm_ext,op1,op2);
+////////////////////////////////////////////////////////////////////////////
+alu a_l_u(op1,op2,aluop,alu_result);
+//////////////////////////////////////////////////////////////////////////////
+ex_mem latch_3(clk,reset,alu_result,r2_val,rd_la,memwrite,memtoreg,regwrite,alu_result_out,r2_value_out,rd_out,memwrite_out,memtoreg_out,regwrite_out);
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+mem_stage memory(clk,reset,alu_result_out,r2_value_out,rd_out,memwrite_out,memtoreg_out,regwrite_out,aluresult,mem_read_data,rdout,memtoregout,regwriteout);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+mem_wb latch_4(clk,reset,aluresult,mem_read_data,rd_out,memtoregout,regwriteout,alu_out,mem_rd_data_out,read_out,mem_to_reg_out,reg_write_out);
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+write_back wrback(reg_write_out,mem_to_reg_out,read_out,mem_rd_data_out,alu_out,wd,rd_back );
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+always@(posedge clk or posedge reset)begin
+   if(reset)begin
+     pc <= 0;
+   end
+   else begin
+     pc <= pc +1;
+   end
+end
+
+
+endmodule
+
+////////////////////////////////////////////////////////////////////////////////////////////
+module instruction_mem (
+    input  [31:0] pc,
+    output [31:0] instruction
+);
+
+    reg [31:0] mem [0:255];
+
+   
+initial begin
+    // Independent MOVs
+    mem[0]  = {5'd5, 1'b1, 4'd1, 4'd0, 4'd0, 14'd10}; // MOV R1, #10
+    mem[1]  = {5'd5, 1'b1, 4'd2, 4'd0, 4'd0, 14'd20}; // MOV R2, #20
+    mem[2]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop   
+    mem[3]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[4]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[5]  = {5'd0, 1'b0, 4'd3, 4'd1, 4'd2, 14'd0};  // ADD R3, R1, R2
+    
+    ///////////////////////////////////////////////////
+    mem[6]  = {5'd5, 1'b1, 4'd6, 4'd0, 4'd0, 14'd5};  // MOV R6, #5
+    mem[7]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[8]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[9]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[10]  = {5'd0, 1'b0, 4'd4, 4'd3, 4'd6, 14'd0};  // ADD R4, R3, R6
+    mem[11]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[12]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[13]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[14]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[15] = {5'd0, 1'b0, 4'd5, 4'd4, 4'd3, 14'd0};  // ADD R5, R4, R3
+    mem[16]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[17]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[18]  = {5'd0, 1'b0, 4'd0, 4'd0, 4'd0, 14'd0}; // nop
+    mem[19]  = {5'd5, 1'b1, 4'd7, 4'd0, 4'd0, 14'd7};  // MOV R7, #7
+    mem[20]  = {5'd5, 1'b1, 4'd8, 4'd0, 4'd0, 14'd8};  // MOV R8, #8   
+    mem[21]  = {5'd5, 1'b1, 4'd9,  4'd0, 4'd0, 14'd3}; // MOV R9, #3
+    mem[22]  = {5'd5, 1'b1, 4'd10, 4'd0, 4'd0, 14'd4}; // MOV R10, #4   
+    mem[23]  = {5'd5, 1'b1, 4'd11, 4'd0, 4'd0, 14'd1}; // MOV R11, #1
+    mem[24] = {5'd5, 1'b1, 4'd12, 4'd0, 4'd0, 14'd2}; // MOV R12, #2
+
+    // Final dependent ADD
+ //   
+end
+
+
+    assign instruction = mem[pc];
+
+endmodule
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+module if_id(  /// latch between if and id
+input clk,
+input reset,
+input [31:0]pc_in,
+input [31:0]instruction_in,
+output reg [31:0]pc_out,
+output reg [31:0]instruction_out
+
+);
+
+always@(posedge clk or posedge reset)begin
+    if(reset) begin
+      pc_out <= 0;
+      instruction_out <= 0;
+    end
+    else begin
+      pc_out <= pc_in;
+      instruction_out <= instruction_in;
+    end
+    
+end
+endmodule
+
+////////////////////////////////////////////////////////////////////////////////
+
+module decode(
+input [31:0]instruction,
+output [4:0]opcode,
+output imm_f,
+output [3:0]rd,
+output [3:0]r1,
+output [3:0]r2,
+output [13:0]imm
+
+);
+
+assign opcode = instruction[31:27];
+assign imm_f = instruction[26];
+assign rd = instruction[25:22];
+assign r1 = instruction[21:18];
+assign r2 = instruction[17:14];
+assign imm = instruction[13:0];
+
+endmodule
+//////////////////////////////////////////////////////////////////////////////
+module id_ex(
+input clk,
+input reset,
+
+input imm_f,
+input [3:0]rd,
+input [3:0]r1,
+input [3:0]r2,
+input [13:0]imm,
+input [4:0]opcode,
+
+output reg imm_f_out,
+output reg [3:0]rd_out,
+output reg [3:0]r1_out,
+output reg [3:0]r2_out,
+output reg [13:0]imm_out,
+output reg [4:0] opcode_la
+);
+
+always@(posedge clk or posedge reset) begin
+  
+   if(reset) begin
+     rd_out <= 0;
+     r1_out <= 0;
+     r2_out <= 0;
+     imm_f_out <= 0;
+     imm_out <= 0;
+     opcode_la <= 0;
+   end
+   
+   else begin  
+     rd_out <= rd;
+     r1_out <= r1;
+     r2_out <= r2;
+     imm_f_out <= imm_f;
+     imm_out <= imm;
+     opcode_la <= opcode; 
+   end
+
+end
+
+endmodule
+
+//////////////////////////////////////////////////////////////////////////////////
+
+module control_unit (
+    input  [4:0] opcode,
+    input imm_f,
+    output reg regwrite,
+    output reg memwrite,
+    output reg memtoreg,
+    output reg alusrc,
+    output reg [3:0]aluop
+);
+
+  
+    always @(*) begin
+    
+        regwrite = 0;
+        memwrite = 0;
+        memtoreg = 0;
+        alusrc   = 0;
+        aluop    = 4'b0000;
+        
+        case(opcode) 
+        
+          5'd0: begin // add
+           regwrite = 1; 
+           aluop = 4'd0;
+           alusrc = imm_f;           
+          end
+          
+           5'd1: begin // sub
+           regwrite = 1;
+           aluop = 4'd1;   
+           alusrc = imm_f;       
+          end
+          
+           5'd2: begin // and
+           regwrite = 1;
+           aluop = 4'd2; 
+           alusrc = imm_f;         
+          end
+        
+           5'd3: begin // or
+           regwrite = 1;
+           aluop = 4'd3;    
+           alusrc = imm_f;      
+          end
+
+            5'd4: begin // xor
+           regwrite = 1;
+           aluop = 4'd4;  
+           alusrc = imm_f;        
+          end
+          
+           5'd5: begin // mov
+                regwrite = 1;
+                alusrc   = 1;
+                aluop    = 4'd5; 
+            end
+            
+            5'd6: begin  // mul
+              regwrite = 1;
+              aluop = 4'd6;
+              alusrc = imm_f;
+              end
+              
+            5'd7: begin  // div
+               regwrite = 1;
+               aluop = 4'd7;
+               alusrc = imm_f;
+              end    
+           
+           
+            // LOAD
+            5'd8: begin
+                regwrite = 1;
+                memtoreg = 1;
+                alusrc   = 1;
+                aluop    = 4'd0; // address = base + imm
+            end
+
+            // STORE
+            5'd9: begin
+                memwrite = 1;
+                alusrc   = 1;
+                aluop    = 4'd0;
+            end
+
+           
+            
+        endcase
+        
+    end 
+
+endmodule
+//////////////////////////////////////////////////////////////////////////////////////
+
+module register_file (
+    input  clk,
+    input  reset,
+    input  [3:0] r1,        
+    input  [3:0] r2, 
+    
+    input  [3:0] rd,        
+    input  [31:0] wd,       
+    input regwrite, 
+    output  [31:0] r1_val,   
+    output  [31:0] r2_val    
+);
+
+reg [31:0] reg_file[15:0];
+
+integer i ;
+  always @(posedge clk or posedge reset) begin
+    if (reset) begin
+        for (i = 0; i < 16; i = i + 1)
+            reg_file[i] <= 32'b0;
+    end
+    else if (regwrite) begin
+        reg_file[rd] <= wd;
+    end
+end
+
+assign r1_val = reg_file[r1];
+assign r2_val = reg_file[r2];
+
+
+endmodule
+
+
+//////////////////////////////////////////////////////////////////
+module op(
+input [31:0]r1_value,
+input [31:0]r2_value,
+input alusrc,
+input [31:0]imm,
+output [31:0]op1,
+output [31:0]op2
+);
+
+assign op1 = r1_value;
+assign op2 = alusrc?imm:r2_value;
+
+endmodule
+
+/////////////////////////////////////////////////////////////////////////
+module alu( 
+input [31:0]op1,
+input [31:0]op2,
+input [3:0]aluop,
+output reg [31:0]alu_result
+
+);
+    
+     always@(*) begin
+          
+       case(aluop)
+       
+           4'd0: alu_result = op1 + op2;
+           4'd1: alu_result = op1 - op2;
+           4'd2: alu_result = op1 & op2;
+           4'd3: alu_result = op1 | op2;
+           4'd4: alu_result = op1 ^ op2;
+           4'd5: alu_result = op2;
+           4'd6: alu_result = op1 * op2;
+           4'd7: alu_result = op1 / op2;
+           default: alu_result = 32'd0;
+     
+        endcase
+    
+      end
+endmodule
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+module ex_mem( 
+ input clk,
+ input reset,
+ 
+ input [31:0] alu_result,
+ input [31:0] r2_value,
+ input [3:0]rd,
+ 
+ input memwrite,
+ input memtoreg,
+ input regwrite, 
+ 
+ output reg [31:0] alu_result_out,
+ output reg [31:0] r2_value_out,
+ output reg [3:0] rd_out,
+ 
+ output reg memwrite_out,
+ output reg memtoreg_out,
+ output reg regwrite_out
+
+);
+
+
+  always@(posedge clk or posedge reset) begin
+  
+    if(reset) begin
+    
+      alu_result_out <= 0;
+      r2_value_out <= 0;
+      rd_out <= 0;
+      
+      memwrite_out <= 0;
+      memtoreg_out <= 0;
+      regwrite_out <= 0;
+      
+    end
+    else begin
+       alu_result_out <= alu_result;
+       r2_value_out <= r2_value;
+      rd_out <= rd;
+      
+      memwrite_out <= memwrite;
+      memtoreg_out <= memtoreg;
+      regwrite_out <= regwrite;
+    end
+  end
+ 
+endmodule
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+module mem_stage (
+    input         clk,
+    input         reset,
+
+    input  [31:0] alu_result,
+    input  [31:0] r2_value,
+    input  [3:0]  rd,
+
+    input         memwrite,
+    input         memtoreg,
+    input         regwrite,
+
+   
+    output reg [31:0] alu_result_out,
+    output reg [31:0] mem_read_data,
+    output reg [3:0]  rd_out,
+
+    output reg        memtoreg_out,
+    output reg        regwrite_out
+);
+
+    reg [31:0] data_memory [0:255];
+
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            mem_read_data <= 32'd0;
+        end
+        else begin       
+            if (memwrite) begin
+                data_memory[alu_result[7:0]] <= r2_value;
+            end
+            if (memtoreg) begin
+                mem_read_data <= data_memory[alu_result[7:0]];
+            end
+        end
+    end
+
+    always @(*) begin
+        alu_result_out = alu_result;
+        rd_out         = rd;
+        memtoreg_out   = memtoreg;
+        regwrite_out   = regwrite;
+    end
+
+endmodule
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+module mem_wb(  
+    
+    input clk,
+    input reset, 
+     
+    input [31:0] alu_result_in ,
+    input [31:0] mem_read_data_in,
+    input [3:0] rd_in,
+    
+    input memtoreg_in,
+    input regwrite_in,
+    
+    output reg [31:0] alu_result_out,
+    output reg [31:0] mem_read_data_out,
+    output reg [3:0] rd_out,
+    
+    output reg memtoreg_out,
+    output reg regwrite_out
+);
+
+
+      always@(posedge clk or posedge reset) begin
+      
+         if(reset) begin
+            alu_result_out <= 0;
+            mem_read_data_out <= 0;
+            rd_out <= 0;
+            
+            memtoreg_out <= 0;
+            regwrite_out <= 0;
+         end
+         
+         else begin
+           alu_result_out <= alu_result_in;
+           mem_read_data_out <= mem_read_data_in;
+           rd_out <= rd_in;
+           memtoreg_out <= memtoreg_in;
+           regwrite_out <= regwrite_in;            
+         end
+     
+      end
+endmodule
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+module write_back (
+      
+      input regwrite ,
+      input memtoreg,    
+      input [3:0]rd,
+      input [31:0]mem_read_data,
+      input [31:0]alu_result ,
+      output reg [31:0]wd,
+      output reg [3:0]rd_out    
+ );
+  
+  //reg [31:0] reg_file[15:0];
+
+      always@(*) begin
+           
+           wd = 32'd0;
+       if(regwrite) begin
+         if(memtoreg) begin
+            wd = mem_read_data;
+         end
+         else begin
+            wd = alu_result;
+         end      
+       end 
+        rd_out = rd;
+           
+      end
+endmodule
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
